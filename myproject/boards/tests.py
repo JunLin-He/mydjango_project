@@ -3,16 +3,152 @@
 
 from django.urls import reverse, resolve
 from django.test import TestCase
-from .views import home
+from django.contrib.auth.models import User
+from .views import home, board_topics, new_topic
+from .models import Board, Topic, Post
+from .forms import NewTopicForm
 
 # Create your tests here.
 class HomeTests(TestCase):
-    def test_home_view_status_code(self):
+    '''Test the home page'''
+    def setUp(self):
+        self.board = Board.objects.create(name='Django', description='Django board.')
         url = reverse('home')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
+        self.response = self.client.get(url)
+
+    def test_home_view_status_code(self):
+        '''test home view status code'''
+        #url = reverse('home')
+        #response = self.client.get(url)
+        self.assertEqual(self.response.status_code, 200)
 
     def test_home_url_resolves_home_view(self):
+        '''test home url resolves home view'''
         view = resolve('/')
         self.assertEqual(view.func, home)
 
+    def test_home_view_contains_link_to_topics_page(self):
+        '''test if home view contains link to topics page'''
+        board_topics_url = reverse("board_topics", kwargs={"pk": self.board.pk})
+        self.assertContains(self.response, 'href="{0}"'.format(board_topics_url))
+
+class BoardTopicsTests(TestCase):
+    '''Test the board-topics page'''
+    def setUp(self):
+        '''Create a board object for test'''
+        Board.objects.create(name='Django', description='Django board.')
+    
+    def test_board_topics_view_success_status_code(self):
+        '''The status code of a success page'''
+        url = reverse('board_topics', kwargs={"pk": 1})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_board_topics_view_not_found_status_code(self):
+        '''The status code of a not found page'''
+        url = reverse('board_topics', kwargs={"pk": 99})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_board_topics_url_resolves_board_topics_view(self):
+        '''Test if the url resolves the view normally'''
+        view = resolve('/boards/1/')
+        self.assertEqual(view.func, board_topics)
+
+    def test_board_topics_view_contains_link_back_to_homepage(self):
+        '''Test if the board topics view contains link back to homepage'''
+        board_topics_url = reverse('board_topics', kwargs={'pk': 1})
+        response = self.client.get(board_topics_url)
+        homepage_url = reverse('home')
+        self.assertContains(response, 'href="{0}"'.format(homepage_url))
+
+class NewTopicTests(TestCase):
+    '''Test the new topic page'''
+    def setUp(self):
+        Board.objects.create(name='Django', description='Django board.')
+        User.objects.create_user(username='test_user', email='test@qq.com', password='123')
+    
+    def test_new_topic_view_success_status_code(self):
+        '''success code:200'''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_new_topic_view_not_found_status_code(self):
+        '''unfound code:404'''
+        url = reverse('new_topic', kwargs={'pk': 99})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+    
+    def test_new_topic_url_resolves_new_topic_view(self):
+        '''found view by url'''
+        view = resolve('/boards/1/new/')
+        self.assertEqual(view.func, new_topic)
+
+    def test_new_topic_view_contains_link_back_to_board_topics_view(self):
+        '''new topic view link back to the previos view'''
+        new_topic_url = reverse('new_topic', kwargs={'pk': 1})
+        board_topics_url = reverse('board_topics', kwargs={'pk': 1}) 
+        response = self.client.get(new_topic_url)
+        self.assertContains(response, 'href="{0}"'.format(board_topics_url))
+
+    def test_board_topics_view_contains_navigation_links(self):
+        '''as the title'''
+        board_topics_url = reverse('board_topics', kwargs={'pk': 1})
+        homepage_url = reverse('home')
+        new_topic_url = reverse('new_topic', kwargs={'pk': 1})
+
+        response = self.client.get(board_topics_url)
+
+        self.assertContains(response, 'href="{0}"'.format(homepage_url))
+        self.assertContains(response, 'href="{0}"'.format(new_topic_url))
+
+    def test_csrf(self):
+        '''test csrf'''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        response = self.client.get(url)
+        self.assertContains(response, 'csrfmiddlewaretoken')
+
+    def test_new_topic_valid_post_data(self):
+        '''the validation of new topic post data'''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        data = {
+            'subject': 'Test title',
+            'message': 'Lorem ipsum dolor sit amet'
+        }        
+        response = self.client.post(url, data)
+        self.assertTrue(Topic.objects.exists())
+        self.assertTrue(Post.objects.exists())
+
+    def test_new_topic_invalid_post_data(self):
+        '''
+        Invalid post data should not redirect
+        The expected behavior is to show the form again with validation errors
+        '''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        response = self.client.post(url, {})
+        form = response.context.get('form')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(form.errors)
+
+    def test_new_topic_invalid_post_data_empty_fields(self):
+        '''
+        Invalid post data should not redirect
+        The expected behavior is to show the form again with validation errors
+        '''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        data = {
+            'subject': '',
+            'message': ''
+        }
+        response = self.client.post(url, data)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Topic.objects.exists())
+        self.assertFalse(Post.objects.exists())
+
+    def test_contains_form(self):
+        '''test form contains'''
+        url = reverse('new_topic', kwargs={'pk': 1})
+        response = self.client.get(url)
+        form = response.context.get('form')
+        self.assertIsInstance(form, NewTopicForm)
