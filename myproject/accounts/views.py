@@ -9,6 +9,8 @@ from .forms import SignUpForm
 # Create your views here.
 
 def signup(request):
+    ''' 注册页面的相关方法实现
+    '''
     if request.method == 'POST':
         form = SignUpForm(request.POST)
         if form.is_valid():
